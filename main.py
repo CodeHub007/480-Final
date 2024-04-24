@@ -201,7 +201,7 @@ def update_client_information():
                 print("Failed to update/add credit card.")
         else:
             print("Invalid choice. Please try again.")
-
+ 
 
 
 def register_new_client():
@@ -210,6 +210,7 @@ def register_new_client():
     email = input("Enter client's email: ")
     addresses = input("Enter client's addresses (comma-separated): ").split(',')
     payment_methods = input("Enter payment card numbers (comma-separated): ").split(',')
+    ccvs = input("Enter CCV for each card (comma-separated): ").split(',')
 
     with sqlite3.connect('library.db') as conn:
         cursor = conn.cursor()
@@ -217,19 +218,49 @@ def register_new_client():
         if cursor.fetchone():
             print("A client with this email already exists.")
             return
+        
         try:
+            # Insert the new client
             cursor.execute("INSERT INTO client (email, name) VALUES (?, ?)", (email, name))
+            conn.commit()  # Commit to ensure client record exists before adding addresses
+
+            # Insert addresses and collect their IDs
             address_ids = []
             for address in addresses:
                 cursor.execute("INSERT INTO addresses (client_email, address) VALUES (?, ?)", (email, address))
-                address_ids.append(cursor.lastrowid)
-            for card_number in payment_methods:
-                address_id = address_ids[min(len(address_ids) - 1, payment_methods.index(card_number))]  # Associate with corresponding address or last one
-                cursor.execute("INSERT INTO credit_cards (client_email, credit_card_number, address_id) VALUES (?, ?, ?)", (email, card_number, address_id))
+                address_ids.append(cursor.lastrowid)  # Store the id of the newly inserted address
+
+            # Insert credit card information
+            if len(payment_methods) != len(ccvs):
+                print("Mismatch in the number of credit cards and CCV numbers provided.")
+                return
+
+            for card_number, ccv in zip(payment_methods, ccvs):
+                if not address_ids:
+                    print("No addresses available to link credit cards.")
+                    return
+                # Display available addresses for this client
+                print("Available addresses:")
+                for idx, addr in enumerate(address_ids):
+                    print(f"{idx + 1}: {addresses[idx]}")
+                addr_choice = int(input("Select the address number for this credit card: ")) - 1
+                address_id = address_ids[addr_choice]
+
+                # Insert credit card linked with the chosen address
+                cursor.execute("""
+                    INSERT INTO credit_cards (credit_card_number, ccv_number, client_email, address_id)
+                    VALUES (?, ?, ?, ?)
+                """, (card_number, ccv, email, address_id))
+            
             conn.commit()
             print("Client registered successfully with multiple addresses and payment methods.")
         except sqlite3.IntegrityError as e:
             print(f"Failed to register client. Error: {e}")
+            conn.rollback()  # Rollback in case of failure
+        except Exception as ex:
+            print(f"An error occurred: {ex}")
+            conn.rollback()  # Rollback on general errors
+
 
 
 def delete_client():
@@ -372,40 +403,53 @@ def manage_payment_methods_menu():
     return choice
 
 def main():
-    # Initialize the database schema
-    createDB.create_schema()
-    # Main loop
+    createDB.create_schema()  # Ensure the database schema is up to date
     while True:
-        user_type = input("Are you a librarian or a client? (L/C): ").upper()
+        user_type = input("Are you a librarian or a client? (L/C/Q to quit): ").upper()
         
+        if user_type == "Q":
+            print("Exiting the program...")
+            break  # Properly exit the program
+
         if user_type == "L":
             while True:
                 choice = librarian_menu()
                 if choice == "1":
-                    doc_choice = manage_documents_menu()
-                    if doc_choice == "1":
-                        insert_new_book()
-                    elif doc_choice == "2":
-                        update_document()
-                    elif doc_choice == "3":
-                        delete_document_copy()
-                    elif doc_choice == "4":
-                        break  # Go back to the main librarian menu
+                    while True:
+                        doc_choice = manage_documents_menu()
+                        if doc_choice == "1":
+                            insert_new_book()
+                        elif doc_choice == "2":
+                            update_document()
+                        elif doc_choice == "3":
+                            delete_document_copy()
+                        elif doc_choice == "4":
+                            break  # Break from document management to librarian menu
                 elif choice == "2":
-                    librarian_choice = manage_librarians_menu()
-                    if librarian_choice == "1":
-                        add_librarian()
-                    elif librarian_choice == "2":
-                        update_librarian()
-                    elif librarian_choice == "3":
-                        break  # Go back to the main librarian menu
+                    while True:
+                        librarian_choice = manage_librarians_menu()
+                        if librarian_choice == "1":
+                            add_librarian()
+                        elif librarian_choice == "2":
+                            update_librarian()
+                        elif librarian_choice == "3":
+                            break  # Break from librarian management to librarian menu
                 elif choice == "3":
-                    client_management_menu()
+                    while True:
+                        client_choice = client_management_menu()
+                        if client_choice == "1":
+                            register_new_client()
+                        elif client_choice == "2":
+                            update_client_information()
+                        elif client_choice == "3":
+                            delete_client()
+                        elif client_choice == "4":
+                            break  # Break from client management to librarian menu
                 elif choice == "4":
                     view_lent_out_documents()
                 elif choice == "5":
-                    print("Exiting the program...")
-                    return  # Exit the main program
+                    print("Exiting the librarian menu...")
+                    break  # Exit the librarian menu
                 else:
                     print("Invalid choice. Please try again.")
         
@@ -413,21 +457,22 @@ def main():
             while True:
                 choice = client_menu()
                 if choice == "1":
-                    search_choice = search_documents_menu()
-                    if search_choice == "1":
-                        search_documents_by_title()
-                    elif search_choice == "2":
-                        print("Searching documents by author...")
-                    elif search_choice == "3":
-                        print("Searching documents by ISBN...")
-                    elif search_choice == "4":
-                        print("Searching documents by publisher...")
-                    elif search_choice == "5":
-                        print("Searching documents by edition...")
-                    elif search_choice == "6":
-                        print("Searching documents by year...")
-                    elif search_choice == "7":
-                        break  # Go back to the main client menu
+                    while True:
+                        search_choice = search_documents_menu()
+                        if search_choice == "1":
+                            search_documents_by_title()
+                        elif search_choice == "2":
+                            print("Searching documents by author...")
+                        elif search_choice == "3":
+                            print("Searching documents by ISBN...")
+                        elif search_choice == "4":
+                            print("Searching documents by publisher...")
+                        elif search_choice == "5":
+                            print("Searching documents by edition...")
+                        elif search_choice == "6":
+                            print("Searching documents by year...")
+                        elif search_choice == "7":
+                            break  # Break from document search to client menu
                 elif choice == "2":
                     borrow_document()
                 elif choice == "3":
@@ -442,15 +487,16 @@ def main():
                         elif payment_choice == "2":
                             print("Deleting payment method...")
                         elif payment_choice == "3":
-                            break  # Go back to the main client menu
+                            break  # Break from payment management to client menu
                 elif choice == "6":
-                    print("Exiting the program...")
-                    return  # Exit the main program
+                    print("Exiting the client menu...")
+                    break  # Exit the client menu
                 else:
                     print("Invalid choice. Please try again.")
         
         else:
-            print("Invalid choice. Please enter 'L' for librarian or 'C' for client.")
+            print("Invalid choice. Please enter 'L' for librarian, 'C' for client, or 'Q' to quit.")
 
 if __name__ == "__main__":
     main()
+
